@@ -65,7 +65,7 @@ int msu_avllq_buf_empty(msu_avllq_handle_t rb);
 
 int msu_avllq_buf_full(msu_avllq_handle_t rb);
 
-/* 以下函数仅供单元测试使用 */
+/* for unit test only */
 
 int msu_avllq_local_buf_empty(msu_avllq_handle_t rb, int consumer_id);
 

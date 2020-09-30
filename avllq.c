@@ -181,9 +181,6 @@ msu_avllq_status_t msu_avllq_produce2(msu_avllq_handle_t q, const void *data, si
 
     void *new_data = NULL;
 
-    static int count = 0;
-
-    count++;
     pthread_mutex_lock(&q->mutex);
 
     new_data = q->preserved_buf[q->wr_off];
