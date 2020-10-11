@@ -101,14 +101,29 @@ int msu_fdzcq_enumerate_consumers(msu_fdzcq_handle_t q, int consumer[MSU_FDZCQ_M
 msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd);
 
 /**
+ * producer check whether data has arrived from consumer
+ *
+ * @param q the handle of fdzcq
+ * @return 0: no data, >0: the client socket to to read
+ */
+int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q);
+
+void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock, uint8_t *buf, size_t max_len);
+
+void msu_fdzcq_producer_run(msu_fdzcq_handle_t q);
+
+/**
  * consume a fd-bazed buf in queue. Notice that refcount is added.
  *
  * @param q the handle of fdzcq
  * @param consumer_id the consumer id returned by msu_fdzcq_register_consumer
- * @param fdbuf the output data wrapped in msu_fdbuf_t. Notice: the pointer should NOT be freed by the caller.
+ * @param fdbuf the output data wrapped in msu_fdbuf_t.
+ *              Notice: the pointer should NOT be freed by the caller.
+ * @param fd the output correct fd in separate process.
+ *              Notice: fdbuf->fd is the fd in producer process, which CANNOT be used in the consumer process.
  * @return status
  */
-msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_fdbuf_t **fdbuf);
+msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_fdbuf_t **fdbuf, int *fd);
 
 /**
  * get the number of the buffers in the queue
