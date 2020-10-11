@@ -18,24 +18,26 @@
 #pragma pack(push)
 #pragma pack(1)
 typedef struct msu_fdzcq_shm_head_s {
-    uint8_t         capacity;                                   /* max nr of items in queue */
-    uint8_t         wr_off;                                     /* producer write ptr */
-    uint8_t         rd_off;                                     /* global read ptr */
-    uint8_t         rd_off_local[MSU_FDZCQ_MAX_CONSUMER];       /* local read ptr */
+    uint8_t         capacity;                                       /* max nr of items in queue */
+    uint8_t         wr_off;                                         /* producer write ptr */
+    uint8_t         rd_off;                                         /* global read ptr */
+    uint8_t         rd_off_local[MSU_FDZCQ_MAX_CONSUMER];           /* local read ptr */
 
-    int             consumer[MSU_FDZCQ_MAX_CONSUMER];           /* consumer flag, -1 means "not exist" */
+    int             consumer[MSU_FDZCQ_MAX_CONSUMER];               /* consumer flag, -1 means "not exist" */
     int             consumer_id_seq_no;
 
-    sem_t          *q_sem;                                      /* the semaphore to protect whole q in shm */
+    sem_t           q_sem;                                          /* the semaphore to protect whole q in shm */
 } msu_fdzcq_shm_head_t;
 #pragma pack(pop)
 
 /* control structure in each process */
 typedef struct msu_fdzcq_s {
-    void                       *shm_data;                       /* the data in shm, including head */
+    void                       *shm_data;                           /* the data in shm, including head */
     int                         shm_fd;
     int                         map_len;
-    msu_fdbuf_release_func_t    fdbuf_free_cb;                  /* callback to free fd */
+    msu_fdbuf_release_func_t    fdbuf_free_cb;                      /* callback to free fd */
+    int                         consumer[MSU_FDZCQ_MAX_CONSUMER];   /* consumers for this q instance */
+    int                         is_producer;                        /* producer or consumer */
 } *msu_fdzcq_handle_t;
 
 #define MSU_FDZCQ_SHM_HEAD_SIZE             sizeof(struct msu_fdzcq_shm_head_s)
@@ -59,7 +61,10 @@ typedef struct msu_fdzcq_s {
 static void fdbuf_free_func(msu_fdzcq_handle_t q, msu_fdbuf_t *fdbuf);
 static int msu_fdzcq_find_consumer_index(msu_fdzcq_handle_t q, int consumer_id);
 static int msu_fdzcq_compare_read_speed2(msu_fdzcq_handle_t q, int consumer_index);
-
+static int msu_fdzcq_local_buf_empty(msu_fdzcq_handle_t q, int consumer_id);
+static int msu_fdzcq_local_buf_full(msu_fdzcq_handle_t q, int consumer_id);
+static int msu_fdzcq_compare_read_speed(msu_fdzcq_handle_t q, int consumer_id);
+static uint8_t msu_fdzcq_slowest_rd_off(msu_fdzcq_handle_t q);
 
 msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb)
 {
@@ -79,6 +84,8 @@ msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t f
         return NULL;
     }
 
+    memset(q->consumer, -1, sizeof(q->consumer));
+    q->is_producer = 1;
     q->fdbuf_free_cb = free_cb ? free_cb : fdbuf_free_func;
     q->map_len = MSU_FDZCQ_SHM_HEAD_SIZE + capacity * sizeof(struct msu_fdbuf_s);
 
@@ -105,9 +112,8 @@ msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t f
     memset(head->consumer, -1, sizeof(head->consumer));
 
     unsigned int init_value = 1;
-    head->q_sem = sem_open("fdzcq", O_CREAT | O_RDWR, 0666, init_value);
-    if (head->q_sem == SEM_FAILED) {
-        printf("Failed to create semaphore fdzcq: %s\n", strerror(errno));
+    if (sem_init(&head->q_sem, 1, init_value) == -1) {
+        printf("Failed to init semaphore: %s\n", strerror(errno));
         munmap(q->shm_data, q->map_len);
         close(q->shm_fd);
         free(q);
@@ -122,15 +128,13 @@ void msu_fdzcq_destroy(msu_fdzcq_handle_t q)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_close(head->q_sem);
+    sem_destroy(&head->q_sem);
 
     munmap(q->shm_data, q->map_len);
 
     close(q->shm_fd);
 
     free(q);
-
-    sem_unlink("fdzcq");
 }
 
 msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb)
@@ -157,6 +161,8 @@ msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb)
         return NULL;
     }
 
+    memset(q->consumer, -1, sizeof(q->consumer));
+    q->is_producer = 0;
     q->fdbuf_free_cb = free_cb ? free_cb : fdbuf_free_func;
 
     /* support int length only */
@@ -178,6 +184,14 @@ void msu_fdzcq_release(msu_fdzcq_handle_t q)
 {
     assert(q != NULL);
 
+    msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
+
+    for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
+        if (q->consumer[i] != -1) {
+            msu_fdzcq_deregister_consumer(q, q->consumer[i]);
+        }
+    }
+
     munmap(q->shm_data, q->map_len);
 
     close(q->shm_fd);
@@ -191,7 +205,7 @@ int msu_fdzcq_register_consumer(msu_fdzcq_handle_t q)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
     int consumer_id = head->consumer_id_seq_no++;
 
@@ -199,13 +213,14 @@ int msu_fdzcq_register_consumer(msu_fdzcq_handle_t q)
     for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
         if (head->consumer[i] == -1) {
             head->consumer[i] = consumer_id;
+            q->consumer[i] = consumer_id;
             head->rd_off_local[i] = head->rd_off;
             found_empty_slot = 1;
             break;
         }
     }
 
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return found_empty_slot ? consumer_id : -1;
 }
@@ -217,16 +232,17 @@ void msu_fdzcq_deregister_consumer(msu_fdzcq_handle_t q, int consumer_id)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
     for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
         if (head->consumer[i] == consumer_id) {
+            q->consumer[i] = -1;
             head->consumer[i] = -1;
             break;
         }
     }
 
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 }
 
 int msu_fdzcq_enumerate_consumers(msu_fdzcq_handle_t q, int consumer[MSU_FDZCQ_MAX_CONSUMER])
@@ -237,7 +253,7 @@ int msu_fdzcq_enumerate_consumers(msu_fdzcq_handle_t q, int consumer[MSU_FDZCQ_M
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
     for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
         if (head->consumer[i] != -1) {
@@ -245,7 +261,7 @@ int msu_fdzcq_enumerate_consumers(msu_fdzcq_handle_t q, int consumer[MSU_FDZCQ_M
         }
     }
 
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return count;
 }
@@ -258,11 +274,17 @@ msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd)
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
     msu_fdbuf_t *bufs = MSU_FDZCQ_SHM_DATA_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
-    /* FIXME: enqueue */
     bufs[head->wr_off].fd = fd;
     bufs[head->wr_off].ref_count = 0;
+
+    if (MSU_FDZCQ_IS_GLOBAL_FULL(head)) {
+        sem_post(&head->q_sem);
+        msu_fdbuf_t *next_buf = &bufs[NEXT_OFFSET(head, head->wr_off)];
+        msu_fdbuf_unref(q, next_buf);
+        sem_wait(&head->q_sem);
+    }
 
     /* update write ptr */
     ADVANCE_WR_OFF(head);
@@ -282,7 +304,7 @@ msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd)
         }
     }
 
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return MSU_FDZCQ_STATUS_OK;
 }
@@ -297,25 +319,24 @@ msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
     msu_fdbuf_t *bufs = MSU_FDZCQ_SHM_DATA_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
     int consumer_index = msu_fdzcq_find_consumer_index(q, consumer_id);
 
     if (consumer_index == -1) {
         printf("Consumer %d not registered", consumer_id);
-        sem_post(head->q_sem);
+        sem_post(&head->q_sem);
         return MSU_FDZCQ_STATUS_CONSUMER_NOT_FOUND;
     }
 
     if (MSU_FDZCQ_IS_LOCAL_EMPTY(head, consumer_index)) {
-        printf("Empty queue for consumer_index: %d\n", consumer_index);
-        sem_post(head->q_sem);
+        printf("Consume empty queue for consumer_index: %d\n", consumer_index);
+        sem_post(&head->q_sem);
         return MSU_FDZCQ_STATUS_NO_BUF;
     }
 
     uint8_t rd_off_local = head->rd_off_local[consumer_index];
 
-    /* FIXME */
     bufs[rd_off_local].ref_count++;
     *fdbuf = &bufs[rd_off_local];
 
@@ -345,7 +366,7 @@ msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_
         }
     }
 
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return MSU_FDZCQ_STATUS_OK;
 }
@@ -424,9 +445,9 @@ int msu_fdzcq_size(msu_fdzcq_handle_t q)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
     int sz = MSU_FDZCQ_BUF_SIZE(head);
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return sz;
 }
@@ -437,9 +458,9 @@ int msu_fdzcq_empty(msu_fdzcq_handle_t q)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
     int empty = MSU_FDZCQ_IS_GLOBAL_EMPTY(head);
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return empty;
 }
@@ -450,14 +471,14 @@ int msu_fdzcq_full(msu_fdzcq_handle_t q)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
     int full = MSU_FDZCQ_IS_GLOBAL_FULL(head);
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 
     return full;
 }
 
-int msu_fdzcq_local_buf_empty(msu_fdzcq_handle_t q, int consumer_id)
+static int msu_fdzcq_local_buf_empty(msu_fdzcq_handle_t q, int consumer_id)
 {
     assert(q != NULL);
 
@@ -468,7 +489,7 @@ int msu_fdzcq_local_buf_empty(msu_fdzcq_handle_t q, int consumer_id)
     return MSU_FDZCQ_IS_LOCAL_EMPTY(head, idx);
 }
 
-int msu_fdzcq_local_buf_full(msu_fdzcq_handle_t q, int consumer_id)
+static int msu_fdzcq_local_buf_full(msu_fdzcq_handle_t q, int consumer_id)
 {
     assert(q != NULL);
 
@@ -479,7 +500,7 @@ int msu_fdzcq_local_buf_full(msu_fdzcq_handle_t q, int consumer_id)
     return MSU_FDZCQ_IS_LOCAL_FULL(head, idx);
 }
 
-int msu_fdzcq_compare_read_speed(msu_fdzcq_handle_t q, int consumer_id)
+static int msu_fdzcq_compare_read_speed(msu_fdzcq_handle_t q, int consumer_id)
 {
     assert(q != NULL);
 
@@ -488,7 +509,7 @@ int msu_fdzcq_compare_read_speed(msu_fdzcq_handle_t q, int consumer_id)
     return msu_fdzcq_compare_read_speed2(q, idx);
 }
 
-uint8_t msu_fdzcq_slowest_rd_off(msu_fdzcq_handle_t q)
+static uint8_t msu_fdzcq_slowest_rd_off(msu_fdzcq_handle_t q)
 {
     assert(q != NULL);
 
@@ -527,11 +548,11 @@ void msu_fdbuf_ref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
     fdb->ref_count++;
 
-    sem_post(head->q_sem);
+    sem_post(&head->q_sem);
 }
 
 void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
@@ -541,23 +562,40 @@ void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
 
-    sem_wait(head->q_sem);
+    sem_wait(&head->q_sem);
 
-    if (fdb->ref_count == 0) {
-        sem_post(head->q_sem);
-        printf("Cannot unref 0 ref_count object\n");
-        return;
+    if (q->is_producer) {
+        if (fdb->ref_count < 0) {
+            printf("Producer release buffer twice is not allowed\n");
+            goto out;
+        }
+        fdb->ref_count--;
+        if (fdb->ref_count == 0 || fdb->ref_count == -1) {
+            if (q->fdbuf_free_cb) {
+                q->fdbuf_free_cb(q, fdb);
+            }
+            if (fdb->ref_count == 0) {
+                fdb->ref_count--; /* make sure buf free function do not called twice */
+            }
+        } else {
+            printf("Impossible refcount detected, shouldn't happen\n");
+        }
+    } else {
+        fdb->ref_count--;
+        if (fdb->ref_count == 0) {
+            if (q->fdbuf_free_cb) {
+                q->fdbuf_free_cb(q, fdb);
+            }
+        } else if (fdb->ref_count < 0) {
+            printf("Consumer release buffer twice is not allowed\n");
+        }
     }
 
-    fdb->ref_count--;
-    if (fdb->ref_count == 0 && q->fdbuf_free_cb) {
-        q->fdbuf_free_cb(q, fdb);
-    }
-
-    sem_post(head->q_sem);
+    out:
+    sem_post(&head->q_sem);
 }
 
-void msu_fdbuf_lock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
+void msu_fdbuf_dmabuf_lock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 {
     assert(q != NULL);
     assert(fdb != NULL);
@@ -568,7 +606,7 @@ void msu_fdbuf_lock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
     ioctl(fdb->fd, DMA_BUF_IOCTL_SYNC, &sync);
 }
 
-void msu_fdbuf_unlock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
+void msu_fdbuf_dmabuf_unlock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 {
     assert(q != NULL);
     assert(fdb != NULL);
@@ -581,5 +619,5 @@ void msu_fdbuf_unlock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 
 static void fdbuf_free_func(msu_fdzcq_handle_t q, msu_fdbuf_t *fdbuf)
 {
-    printf("Freeing buf...\n");
+    //printf("Freeing buf...\n");
 }

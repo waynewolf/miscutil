@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
+#include <assert.h>
+#include <semaphore.h>
 #include <glib.h>
 #include "fdzcq.h"
 
@@ -138,6 +140,8 @@ static void test_fdzcq_sp_produce_and_consume()
 
         g_assert_cmpint(fdbuf->fd, ==, data);
 
+        msu_fdbuf_unref(q, fdbuf);
+
         g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
 
         g_assert_true(msu_fdzcq_empty(q));
@@ -158,6 +162,8 @@ static void test_fdzcq_sp_produce_and_consume()
         g_assert_true(msu_fdzcq_consume(q, consumer_id, &fdbuf2) == MSU_FDZCQ_STATUS_OK);
 
         g_assert_cmpint(fdbuf2->fd, ==, data2);
+
+        msu_fdbuf_unref(q, fdbuf2);
 
         g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
     }
@@ -185,6 +191,8 @@ static void test_fdzcq_sp_produce_fast_and_consume_slow()
     g_assert_true(msu_fdzcq_consume(q, consumer_id, &fdbuf) == MSU_FDZCQ_STATUS_OK);
 
     g_assert_cmpint(fdbuf->fd, ==, 7);
+
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
@@ -215,18 +223,22 @@ static void test_fdzcq_sp_produce_slow_and_multiple_consume()
     g_assert_true(msu_fdzcq_produce(q, data) == MSU_FDZCQ_STATUS_OK);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id4, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     /* buffer will only disappear after all consumers fetched buffer */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
@@ -241,36 +253,44 @@ static void test_fdzcq_sp_produce_slow_and_multiple_consume()
 
     /* fetch the first buffer */
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id4, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     /* all consumer fetched "data1“， buffer count-- */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     /* fetch the second buffer */
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id4, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     /* two buffers are fetched */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
@@ -287,27 +307,47 @@ static void test_fdzcq_sp_produce_slow_and_multiple_consume()
     g_assert_true(msu_fdzcq_produce(q, 4) == MSU_FDZCQ_STATUS_OK);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     /* first 3 consumers fetched all the buffers, the fourth is slow, no buffer has been fetched */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 3);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id4, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id4, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id4, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
 
@@ -332,6 +372,8 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_join_in_the_middle()
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 1);
+    msu_fdbuf_unref(q, fdbuf);
+
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     int consumer_id2 = msu_fdzcq_register_consumer(q);
@@ -341,26 +383,31 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_join_in_the_middle()
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     /*  consumer 2 has not yet fetched buffer， size is not changed */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     /* consumer 1,2 have fetched buffer "producer #1"， so size - 1 */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     int consumer_id3 = msu_fdzcq_register_consumer(q);
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 3);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
 
@@ -382,6 +429,7 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister(
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id1, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 1);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
@@ -395,6 +443,7 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister(
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 2);
+    msu_fdbuf_unref(q, fdbuf);
 
     /* only one consumer， so buf -1 after consume */
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
@@ -407,17 +456,21 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister(
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 3);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 3);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 1);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id2, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 4);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_true(msu_fdzcq_consume(q, consumer_id3, &fdbuf) == MSU_FDZCQ_STATUS_OK);
     g_assert_cmpint(fdbuf->fd, ==, 4);
+    msu_fdbuf_unref(q, fdbuf);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
 
@@ -428,6 +481,311 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister(
     g_assert_cmpint(msu_fdzcq_enumerate_consumers(q, consumers), ==, 0);
 
     msu_fdzcq_destroy(q);
+}
+
+static void test_fdzcq_mp_shm_header()
+{
+    pid_t pid = fork();
+
+    if (pid > 0) {
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+
+        for (int i = 1; i < 4; i ++) {
+            g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
+        }
+
+        int ret = waitpid(pid, NULL, 0);
+        g_assert(ret > 0);
+
+        msu_fdzcq_destroy(q);
+    } else if (pid == 0) {
+        sleep(1);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+
+        void *shm_addr = (void *)(*(uint64_t *)q);
+
+        uint8_t capacity = *((uint8_t *)shm_addr + 0);
+        uint8_t wr_off = *((uint8_t *)shm_addr + 1);
+        uint8_t rd_off = *((uint8_t *)shm_addr + 2);
+
+        g_assert_cmpint(capacity, ==, 4);
+        g_assert_cmpint(wr_off, ==, 3);
+        g_assert_cmpint(rd_off, ==, 0);
+
+        int consumer = msu_fdzcq_register_consumer(q);
+
+        msu_fdbuf_t *fdbuf = NULL;
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+
+        capacity = *((uint8_t *)shm_addr + 0);
+        wr_off = *((uint8_t *)shm_addr + 1);
+        rd_off = *((uint8_t *)shm_addr + 2);
+
+        g_assert_cmpint(capacity, ==, 4);
+        g_assert_cmpint(wr_off, ==, 3);
+        g_assert_cmpint(rd_off, ==, 1);
+
+        msu_fdbuf_unref(q, fdbuf);
+
+        msu_fdzcq_deregister_consumer(q, consumer);
+
+        msu_fdzcq_release(q);
+
+        exit(0);
+    }
+}
+
+static void test_fdzcq_mp_produce_consume()
+{
+    pid_t pid = fork();
+
+    if (pid > 0) {
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+
+        for (int i = 1; i < 100; i ++) {
+            g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
+        }
+
+        int ret = waitpid(pid, NULL, 0);
+        g_assert(ret > 0);
+
+        msu_fdzcq_destroy(q);
+    } else if (pid == 0) {
+        /* child process wait for parent process to create fdzcq */
+        sleep(1);
+
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+
+        int consumer1 = msu_fdzcq_register_consumer(q);
+        g_assert_true(consumer1 >= 0);
+
+        int consumer2 = msu_fdzcq_register_consumer(q);
+        g_assert_true(consumer2 >= 0);
+
+        g_assert_true(consumer1 != consumer2);
+
+        msu_fdbuf_t *fdbuf = NULL;
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 97);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 98);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 97);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 99);
+        msu_fdbuf_unref(q, fdbuf);
+
+        /* 98, 99 remain in q */
+        g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 98);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 99);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_true(msu_fdzcq_empty(q));
+
+        msu_fdzcq_release(q);
+
+        exit(0);
+    }
+}
+
+static void test_fdzcq_mp_release_without_deregister()
+{
+    pid_t pid = fork();
+
+    if (pid > 0) {
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+
+        for (int i = 1; i < 100; i ++) {
+            g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
+        }
+
+        int ret = waitpid(pid, NULL, 0);
+        g_assert(ret > 0);
+
+        msu_fdzcq_destroy(q);
+    } else if (pid == 0) {
+        /* child process wait for parent process to create fdzcq */
+        sleep(1);
+
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+
+        int consumer1 = msu_fdzcq_register_consumer(q);
+        g_assert_true(consumer1 >= 0);
+
+        /* release without calling deregister */
+        msu_fdzcq_release(q);
+
+        q = msu_fdzcq_acquire(NULL);
+
+        consumer1 = msu_fdzcq_register_consumer(q);
+        g_assert_true(consumer1 >= 0);
+
+        int consumer2 = msu_fdzcq_register_consumer(q);
+        g_assert_true(consumer2 >= 0);
+
+        g_assert_true(consumer1 != consumer2);
+
+        msu_fdbuf_t *fdbuf = NULL;
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 97);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 98);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 97);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 99);
+        msu_fdbuf_unref(q, fdbuf);
+
+        /* 98, 99 remain in q */
+        g_assert_cmpint(msu_fdzcq_size(q), ==, 2);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 98);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf->fd, ==, 99);
+        msu_fdbuf_unref(q, fdbuf);
+
+        g_assert_true(msu_fdzcq_empty(q));
+
+        msu_fdzcq_release(q);
+
+        exit(0);
+    }
+}
+
+static void test_fdzcq_mp_release_buffer_check_refcount()
+{
+    pid_t pid = fork();
+
+    if (pid > 0) {
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+
+        for (int i = 1; i < 4; i ++) {
+            g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
+        }
+
+        int ret = waitpid(pid, NULL, 0);
+        g_assert(ret > 0);
+
+        msu_fdzcq_destroy(q);
+    } else if (pid == 0) {
+        /* child process wait for parent process to create fdzcq */
+        sleep(1);
+
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+        g_assert_nonnull(q);
+
+        int consumer1 = msu_fdzcq_register_consumer(q);
+
+        g_assert_true(consumer1 >= 0);
+
+        int consumer2 = msu_fdzcq_register_consumer(q);
+        g_assert_true(consumer2 >= 0);
+
+        g_assert_true(consumer1 != consumer2);
+
+        msu_fdbuf_t *fdbuf1 = NULL;
+        msu_fdbuf_t *fdbuf2 = NULL;
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer1, &fdbuf1), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf1->fd, ==, 1);
+        g_assert_cmpint(fdbuf1->ref_count, ==, 1);
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer2, &fdbuf2), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(fdbuf2->fd, ==, 1);
+        g_assert_cmpint(fdbuf2->ref_count, ==, 2);
+        g_assert_cmpint(fdbuf1->ref_count, ==, 2);
+
+        msu_fdbuf_unref(q, fdbuf2);
+        g_assert_cmpint(fdbuf2->ref_count, ==, 1);
+        g_assert_cmpint(fdbuf1->ref_count, ==, 1);
+
+        msu_fdbuf_unref(q, fdbuf1);
+
+        g_assert_cmpint(fdbuf2->ref_count, ==, 0);
+        g_assert_cmpint(fdbuf1->ref_count, ==, 0);
+
+        /* unref a buffer which has already been released */
+        msu_fdbuf_unref(q, fdbuf1);
+        msu_fdbuf_unref(q, fdbuf1);
+
+        msu_fdzcq_release(q);
+
+        exit(0);
+    }
+}
+
+static int to_release_buffer;
+
+static void producer_release_cb(msu_fdzcq_handle_t q, msu_fdbuf_t *fdbuf)
+{
+    g_assert_cmpint(to_release_buffer, ==, fdbuf->fd);
+}
+
+static void consumer_release_cb(msu_fdzcq_handle_t q, msu_fdbuf_t *fdbuf)
+{
+    printf("consumer_release_cb %d\n", fdbuf->fd);
+}
+
+static void test_fdzcq_mp_producer_release_buffer_because_of_no_consumer()
+{
+    pid_t pid = fork();
+
+    if (pid > 0) {
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, producer_release_cb);
+
+        for (int i = 1; i < 4; i ++) {
+            g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
+        }
+
+        to_release_buffer = 1;
+        g_assert_true(msu_fdzcq_produce(q, 4) == MSU_FDZCQ_STATUS_OK);
+
+        to_release_buffer = 2;
+        g_assert_true(msu_fdzcq_produce(q, 5) == MSU_FDZCQ_STATUS_OK);
+
+        to_release_buffer = 3;
+        g_assert_true(msu_fdzcq_produce(q, 6) == MSU_FDZCQ_STATUS_OK);
+
+        to_release_buffer = 4;
+        g_assert_true(msu_fdzcq_produce(q, 7) == MSU_FDZCQ_STATUS_OK);
+
+        to_release_buffer = 5;
+        g_assert_true(msu_fdzcq_produce(q, 8) == MSU_FDZCQ_STATUS_OK);
+
+        /* now buffer 3, 4, 5 remain in q */
+        g_assert_cmpint(msu_fdzcq_size(q), ==, 3);
+
+        int ret = waitpid(pid, NULL, 0);
+        g_assert(ret > 0);
+
+        msu_fdzcq_destroy(q);
+    } else if (pid == 0) {
+        /* child process wait for parent process to create fdzcq */
+        sleep(1);
+
+        exit(0);
+    }
 }
 
 int main(int argc, char *argv[])
@@ -463,6 +821,21 @@ int main(int argc, char *argv[])
 
     g_test_add_func("/miscutil/fdzcq/test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister",
                     test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister);
+
+    g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_shm_header",
+                    test_fdzcq_mp_shm_header);
+
+    g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_produce_consume",
+                    test_fdzcq_mp_produce_consume);
+
+    g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_release_without_deregister",
+                    test_fdzcq_mp_release_without_deregister);
+
+    g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_release_buffer_check_refcount",
+                    test_fdzcq_mp_release_buffer_check_refcount);
+
+    g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_producer_release_buffer_because_of_no_consumer",
+                    test_fdzcq_mp_producer_release_buffer_because_of_no_consumer);
 
     return g_test_run();
 }

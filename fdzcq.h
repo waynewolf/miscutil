@@ -35,6 +35,7 @@ typedef struct msu_fdbuf_s {
     int                 ref_count;          /* zero means slot empty */
 } msu_fdbuf_t;
 
+/* the callback function is called within the semaphore protection */
 typedef void (*msu_fdbuf_release_func_t)(msu_fdzcq_handle_t q, msu_fdbuf_t *fdbuf);
 
 /**
@@ -67,17 +68,10 @@ msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb);
 void msu_fdzcq_release(msu_fdzcq_handle_t q);
 
 /**
- * consumer release fdzcq
- *
- * @param q the handle of fdzcq
- */
-void msu_fdzcq_put(msu_fdzcq_handle_t q);
-
-/**
  * register consumer
  *
  * @param q the handle of fdzcq
- * @return -1 failed, >0 the consumer id
+ * @return -1 failed, >= 0 the consumer id
  */
 int msu_fdzcq_register_consumer(msu_fdzcq_handle_t q);
 
@@ -97,15 +91,30 @@ void msu_fdzcq_deregister_consumer(msu_fdzcq_handle_t q, int consumer_id);
  */
 int msu_fdzcq_enumerate_consumers(msu_fdzcq_handle_t q, int consumer[MSU_FDZCQ_MAX_CONSUMER]);
 
+/**
+ * produce a fd-bazed buf in queue
+ *
+ * @param q the handle of fdzcq
+ * @param fd the buf based on fd
+ * @return status
+ */
 msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd);
 
+/**
+ * consume a fd-bazed buf in queue. Notice that refcount is added.
+ *
+ * @param q the handle of fdzcq
+ * @param consumer_id the consumer id returned by msu_fdzcq_register_consumer
+ * @param fdbuf the output data wrapped in msu_fdbuf_t. Notice: the pointer should NOT be freed by the caller.
+ * @return status
+ */
 msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_fdbuf_t **fdbuf);
 
 /**
  * get the number of the buffers in the queue
  *
  * @param q the handle of fdzcq
- * @return size of the buffer
+ * @return number of buffers in the queue
  */
 int msu_fdzcq_size(msu_fdzcq_handle_t q);
 
@@ -125,17 +134,37 @@ int msu_fdzcq_empty(msu_fdzcq_handle_t q);
  */
 int msu_fdzcq_full(msu_fdzcq_handle_t q);
 
-int msu_fdzcq_local_buf_empty(msu_fdzcq_handle_t q, int consumer_id);
-
-int msu_fdzcq_local_buf_full(msu_fdzcq_handle_t q, int consumer_id);
-
-int msu_fdzcq_compare_read_speed(msu_fdzcq_handle_t q, int consumer_id);
-
-uint8_t msu_fdzcq_slowest_rd_off(msu_fdzcq_handle_t q);
-
+/**
+ * Add a reference to fdbuf.
+ *
+ * @param q the handle of the fdzcq
+ * @param fdb the msu_fdbut_t pointer
+ */
 void msu_fdbuf_ref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb);
 
+/**
+ * Subtract a reference to fdbuf. If refcount reaches 0, free buf function is called.
+ *
+ * @param q the handle of the fdzcq
+ * @param fdb the msu_fdbut_t pointer
+ */
 void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb);
+
+/**
+ * If the fd in fdbuf is dmabuf, lock it before access.
+ *
+ * @param q the handle of fdzcq
+ * @param fdb the msu_fdbut_t pointer
+ */
+void msu_fdbuf_dmabuf_lock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb);
+
+/**
+ * If the fd in fdbuf is dmabuf, unlock it after access.
+ *
+ * @param q the handle of fdzcq
+ * @param fdb the msu_fdbut_t pointer
+ */
+void msu_fdbuf_dmabuf_unlock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb);
 
 #ifdef __cplusplus
 }
