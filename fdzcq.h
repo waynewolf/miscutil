@@ -44,7 +44,7 @@ typedef void (*msu_fdbuf_release_func_t)(msu_fdzcq_handle_t q, msu_fdbuf_t *fdbu
  * @param capacity maximum nr of items in fdzcq
  * @return the handle of fdzcq
  */
-msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb);
+msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb, void *user_data);
 
 /**
  * producer destroy fdzcq
@@ -58,7 +58,7 @@ void msu_fdzcq_destroy(msu_fdzcq_handle_t q);
  *
  * @return the handle of fdzcq
  */
-msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb);
+msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb, void *user_data);
 
 /**
  * consumer releases fdzcq

@@ -13,17 +13,17 @@
 
 static void test_fdzcq_create_and_destroy()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL, NULL);
     g_assert_nonnull(q);
 
     msu_fdzcq_destroy(q);
 
-    q = msu_fdzcq_create(10, NULL);
+    q = msu_fdzcq_create(10, NULL, NULL);
     g_assert_nonnull(q);
 
     {
         /* consumer in the same process, acquire and release */
-        msu_fdzcq_handle_t q2 = msu_fdzcq_acquire(NULL);
+        msu_fdzcq_handle_t q2 = msu_fdzcq_acquire(NULL, NULL);
         g_assert_nonnull(q2);
 
         msu_fdzcq_release(q2);
@@ -37,7 +37,7 @@ static void test_fdzcq_create_and_destroy()
         msu_fdzcq_destroy(q);
     } else if (pid == 0) {
         /* consumer in the different process, acquire and release */
-        msu_fdzcq_handle_t q3 = msu_fdzcq_acquire(NULL);
+        msu_fdzcq_handle_t q3 = msu_fdzcq_acquire(NULL, NULL);
         g_assert_nonnull(q3);
 
         msu_fdzcq_release(q3);
@@ -47,7 +47,7 @@ static void test_fdzcq_create_and_destroy()
 
 static void test_fdzcq_size_of_empty_queue()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL, NULL);
 
     g_assert_cmpint(msu_fdzcq_size(q), ==, 0);
     g_assert_true(msu_fdzcq_empty(q));
@@ -58,7 +58,7 @@ static void test_fdzcq_size_of_empty_queue()
 
 static void test_fdzcq_register_and_deregister_consumer()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(8, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(8, NULL, NULL);
 
     int consumer_id1 = msu_fdzcq_register_consumer(q);
     g_assert_true(consumer_id1 >= 0);
@@ -99,7 +99,7 @@ static void test_fdzcq_register_and_deregister_consumer()
 
 static void test_fdzcq_sp_produce_without_consume()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL, NULL);
 
     for (int i = 1; i < 100; i++) {
         g_assert_cmpint(msu_fdzcq_produce(q, i), ==, MSU_FDZCQ_STATUS_OK);
@@ -110,7 +110,7 @@ static void test_fdzcq_sp_produce_without_consume()
 
 static void test_fdzcq_sp_produce_without_consume_but_with_consumer()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(10, NULL, NULL);
 
     msu_fdzcq_register_consumer(q);
 
@@ -123,7 +123,7 @@ static void test_fdzcq_sp_produce_without_consume_but_with_consumer()
 
 static void test_fdzcq_sp_produce_and_consume()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(3, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(3, NULL, NULL);
 
     int consumer_id = msu_fdzcq_register_consumer(q);
 
@@ -175,7 +175,7 @@ static void test_fdzcq_sp_produce_and_consume()
 
 static void test_fdzcq_sp_produce_fast_and_consume_slow()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
     int consumer_id = msu_fdzcq_register_consumer(q);
 
@@ -205,7 +205,7 @@ static void test_fdzcq_sp_produce_fast_and_consume_slow()
 
 static void test_fdzcq_sp_produce_slow_and_multiple_consume()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
     int consumer_id1 = msu_fdzcq_register_consumer(q);
     int consumer_id2 = msu_fdzcq_register_consumer(q);
@@ -362,7 +362,7 @@ static void test_fdzcq_sp_produce_slow_and_multiple_consume()
 
 static void test_fdzcq_sp_produce_and_multiple_consumer_join_in_the_middle()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
     msu_fdbuf_t *fdbuf = NULL;
 
@@ -418,7 +418,7 @@ static void test_fdzcq_sp_produce_and_multiple_consumer_join_in_the_middle()
 
 static void test_fdzcq_sp_produce_and_multiple_consumer_register_and_deregister()
 {
-    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+    msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
     msu_fdbuf_t *fdbuf = NULL;
 
     g_assert_true(msu_fdzcq_produce(q, 1) == MSU_FDZCQ_STATUS_OK);
@@ -490,7 +490,7 @@ static void test_fdzcq_mp_shm_header()
     pid_t pid = fork();
 
     if (pid > 0) {
-        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
         for (int i = 1; i < 4; i ++) {
             g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
@@ -502,7 +502,7 @@ static void test_fdzcq_mp_shm_header()
         msu_fdzcq_destroy(q);
     } else if (pid == 0) {
         sleep(1);
-        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL, NULL);
 
         void *shm_addr = (void *)(*(uint64_t *)q);
 
@@ -542,7 +542,7 @@ static void test_fdzcq_mp_produce_consume()
     pid_t pid = fork();
 
     if (pid > 0) {
-        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
         for (int i = 1; i < 100; i ++) {
             g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
@@ -556,7 +556,7 @@ static void test_fdzcq_mp_produce_consume()
         /* child process wait for parent process to create fdzcq */
         sleep(1);
 
-        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL, NULL);
 
         int consumer1 = msu_fdzcq_register_consumer(q);
         g_assert_true(consumer1 >= 0);
@@ -607,7 +607,7 @@ static void test_fdzcq_mp_release_without_deregister()
     pid_t pid = fork();
 
     if (pid > 0) {
-        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
         for (int i = 1; i < 100; i ++) {
             g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
@@ -621,7 +621,7 @@ static void test_fdzcq_mp_release_without_deregister()
         /* child process wait for parent process to create fdzcq */
         sleep(1);
 
-        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL, NULL);
 
         int consumer1 = msu_fdzcq_register_consumer(q);
         g_assert_true(consumer1 >= 0);
@@ -629,7 +629,7 @@ static void test_fdzcq_mp_release_without_deregister()
         /* release without calling deregister */
         msu_fdzcq_release(q);
 
-        q = msu_fdzcq_acquire(NULL);
+        q = msu_fdzcq_acquire(NULL, NULL);
 
         consumer1 = msu_fdzcq_register_consumer(q);
         g_assert_true(consumer1 >= 0);
@@ -680,7 +680,7 @@ static void test_fdzcq_mp_release_buffer_check_refcount()
     pid_t pid = fork();
 
     if (pid > 0) {
-        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
         for (int i = 1; i < 4; i ++) {
             g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
@@ -694,7 +694,7 @@ static void test_fdzcq_mp_release_buffer_check_refcount()
         /* child process wait for parent process to create fdzcq */
         sleep(1);
 
-        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL, NULL);
         g_assert_nonnull(q);
 
         int consumer1 = msu_fdzcq_register_consumer(q);
@@ -754,7 +754,7 @@ static void test_fdzcq_mp_producer_release_buffer_because_of_no_consumer()
     pid_t pid = fork();
 
     if (pid > 0) {
-        msu_fdzcq_handle_t q = msu_fdzcq_create(4, producer_release_cb);
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, producer_release_cb, NULL);
 
         for (int i = 1; i < 4; i ++) {
             g_assert_true(msu_fdzcq_produce(q, i) == MSU_FDZCQ_STATUS_OK);
@@ -801,7 +801,7 @@ static void test_fdzcq_mp_transfer_fd_cross_process()
     pid_t pid = fork();
 
     if (pid > 0) {
-        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL);
+        msu_fdzcq_handle_t q = msu_fdzcq_create(4, NULL, NULL);
 
         /* stdin, stdout, stderr, socket, shm_fd occupied, so the first opened fd is 5 */
         int fd = memfd_create("test_fdzcq_memfd", MFD_ALLOW_SEALING);
@@ -839,7 +839,7 @@ static void test_fdzcq_mp_transfer_fd_cross_process()
         /* child process wait for parent process to create fdzcq */
         sleep(1);
 
-        msu_fdzcq_handle_t q = msu_fdzcq_acquire(release_memfd);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(release_memfd, NULL);
 
         int consumer_id = msu_fdzcq_register_consumer(q);
         g_assert_true(consumer_id >= 0);

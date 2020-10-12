@@ -42,6 +42,7 @@ typedef struct msu_fdzcq_s {
     int                         is_producer;                        /* producer or consumer */
     int                         sock;                               /* producer: listen sock, consumer: data sock */
     int                         quit_server;                        /* flag to quit producer socket server */
+    void                       *user_data;                          /* opaque data, no touch, just pass around */
 } *msu_fdzcq_handle_t;
 
 #define PRODUCER_SERVER_SOCK                "/tmp/fdzcq.sock"
@@ -80,7 +81,7 @@ static ssize_t consumer_block_sock_sendn(int sock, void *buf, ssize_t bufsize);
 static ssize_t consumer_block_sock_readn(int sock, void *buf, ssize_t bufsize);
 
 
-msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb)
+msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb, void *user_data)
 {
     assert(capacity > 0);
 
@@ -152,6 +153,7 @@ msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t f
 
     memset(q->consumer, -1, sizeof(q->consumer));
 
+    q->user_data = user_data;
     q->fdbuf_free_cb = free_cb ? free_cb : fdbuf_free_func;
     q->map_len = MSU_FDZCQ_SHM_HEAD_SIZE + capacity * sizeof(struct msu_fdbuf_s);
 
@@ -206,7 +208,7 @@ void msu_fdzcq_destroy(msu_fdzcq_handle_t q)
     free(q);
 }
 
-msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb)
+msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb, void *user_data)
 {
     msu_fdzcq_handle_t q = (msu_fdzcq_handle_t)malloc(sizeof(struct msu_fdzcq_s));
     if (!q) {
@@ -265,6 +267,7 @@ msu_fdzcq_handle_t msu_fdzcq_acquire(msu_fdbuf_release_func_t free_cb)
 
     memset(q->consumer, -1, sizeof(q->consumer));
 
+    q->user_data = user_data;
     q->fdbuf_free_cb = free_cb ? free_cb : fdbuf_free_func;
 
     /* support int length only */
