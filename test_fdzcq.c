@@ -851,6 +851,7 @@ static void test_fdzcq_mp_transfer_fd_cross_process()
         msu_fdbuf_t *fdbuf = NULL;
         g_assert_cmpint(msu_fdzcq_consume(q, consumer_id, &fdbuf, &fd), ==, MSU_FDZCQ_STATUS_OK);
 
+        /* the fd in producer process, not useful in consumer process */
         g_assert_cmpint(fdbuf->fd, ==, 5);
 
         /* stdin, stdout, stderr, sock_fd, shm_fd, dupfd5, dupfd6 occupied */
