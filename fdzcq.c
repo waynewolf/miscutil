@@ -289,8 +289,6 @@ void msu_fdzcq_release(msu_fdzcq_handle_t q)
 {
     assert(q != NULL);
 
-    msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
-
     for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
         if (q->consumer[i] != -1) {
             msu_fdzcq_deregister_consumer(q, q->consumer[i]);
@@ -473,7 +471,6 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock, uint8
 {
     assert(max_len > 0);
 
-    msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
     msu_fdbuf_t *bufs = MSU_FDZCQ_SHM_DATA_PTR(q);
 
     uint8_t offset = 0;
@@ -602,7 +599,6 @@ static int msu_fdzcq_find_consumer_index(msu_fdzcq_handle_t q, int consumer_id)
 static int msu_fdzcq_compare_read_speed2(msu_fdzcq_handle_t q, int consumer_index)
 {
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
-    msu_fdbuf_t *bufs = MSU_FDZCQ_SHM_DATA_PTR(q);
 
     assert(CONSUMER_EXISTS(head, consumer_index));
 
@@ -885,7 +881,7 @@ static int connect_with_timeout(int sock, struct sockaddr_un *addr, struct timev
 
 static int get_fd_from_producer_locked(msu_fdzcq_handle_t q, uint8_t offset)
 {
-    int n = consumer_block_sock_sendn(q->sock, &offset, 1);
+    consumer_block_sock_sendn(q->sock, &offset, 1);
 
     uint8_t nouse;
     int fd = -1;
