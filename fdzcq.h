@@ -33,6 +33,7 @@ typedef struct msu_fdzcq_s *msu_fdzcq_handle_t;
 typedef struct msu_fdbuf_s {
     int                 fd;
     int                 ref_count;          /* zero means slot empty */
+    void               *producer_data;      /* opaque data pointer ONLY used by producer */
 } msu_fdbuf_t;
 
 /* the callback function is called within the semaphore protection */
@@ -101,6 +102,16 @@ int msu_fdzcq_enumerate_consumers(msu_fdzcq_handle_t q, int consumer[MSU_FDZCQ_M
 msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd);
 
 /**
+ * produce a fd-bazed buf in queue
+ *
+ * @param q the handle of fdzcq
+ * @param fd the buf based on fd
+ * @param data opaque data pointer attached to fdbuf
+ * @return status
+ */
+msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data);
+
+/**
  * producer check whether data has arrived from consumer
  *
  * @param q the handle of fdzcq
@@ -148,6 +159,14 @@ int msu_fdzcq_empty(msu_fdzcq_handle_t q);
  * @return 1 full, 0 otherwise
  */
 int msu_fdzcq_full(msu_fdzcq_handle_t q);
+
+/**
+ * get the user data pointer of fdzcq
+ *
+ * @param q the handle of fdzcq
+ * @return the user data
+ */
+void *msu_fdzcq_get_user_data(msu_fdzcq_handle_t q);
 
 /**
  * Add a reference to fdbuf.

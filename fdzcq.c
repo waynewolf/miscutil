@@ -373,6 +373,14 @@ msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd)
     assert(q != NULL);
     assert(fd > 0);
 
+    return msu_fdzcq_produce2(q, fd, NULL);
+}
+
+msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data)
+{
+    assert(q != NULL);
+    assert(fd > 0);
+
     msu_fdzcq_shm_head_t *head = MSU_FDZCQ_SHM_HEAD_PTR(q);
     msu_fdbuf_t *bufs = MSU_FDZCQ_SHM_DATA_PTR(q);
 
@@ -380,6 +388,7 @@ msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd)
 
     bufs[head->wr_off].fd = fd;
     bufs[head->wr_off].ref_count = 0;
+    bufs[head->wr_off].producer_data = data;
 
     if (MSU_FDZCQ_IS_GLOBAL_FULL(head)) {
         sem_post(&head->q_sem);
@@ -676,6 +685,13 @@ int msu_fdzcq_full(msu_fdzcq_handle_t q)
     sem_post(&head->q_sem);
 
     return full;
+}
+
+void *msu_fdzcq_get_user_data(msu_fdzcq_handle_t q)
+{
+    assert(q != NULL);
+
+    return q->user_data;
 }
 
 static int msu_fdzcq_local_buf_empty(msu_fdzcq_handle_t q, int consumer_id)
