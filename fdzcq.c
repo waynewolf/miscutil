@@ -430,11 +430,11 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
     FD_ZERO(&read_set);
     FD_SET(q->sock, &read_set);
 
-    timeout.tv_sec  = 1;
-    timeout.tv_usec = 0;
+    timeout.tv_sec  = 0;
+    timeout.tv_usec = 10 * 1000;
 
     int max_sock = q->sock;
-    int retval = select(max_sock + 1, &read_set, NULL, NULL, NULL);
+    int retval = select(max_sock + 1, &read_set, NULL, NULL, &timeout);
 
     while (1) {
         if (retval == -1) {
@@ -475,9 +475,9 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
     return 0;
 }
 
-void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock, uint8_t *buf, size_t max_len)
+void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock)
 {
-    assert(max_len > 0);
+    assert(q != NULL);
 
     msu_fdbuf_t *bufs = MSU_FDZCQ_SHM_DATA_PTR(q);
 
@@ -491,20 +491,18 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock, uint8
 
     /* do not lock here, consumer already hold the semaphore */
     int fd = bufs[offset].fd;
-
-    sock_fd_write(client_sock, buf, max_len, fd);
+    uint8_t nouse = 0;
+    sock_fd_write(client_sock, &nouse, 1, fd);
 }
 
 void msu_fdzcq_producer_run(msu_fdzcq_handle_t q)
 {
     assert(q != NULL);
 
-    uint8_t buf[1024];
-
     while (!q->quit_server) {
         int client_sock = msu_fdzcq_producer_has_data(q);
         if (client_sock > 0) {
-            msu_fdzcq_producer_handle_data(q, client_sock, buf, 1024);
+            msu_fdzcq_producer_handle_data(q, client_sock);
         }
     }
 }

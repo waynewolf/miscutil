@@ -119,7 +119,7 @@ msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data);
  */
 int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q);
 
-void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock, uint8_t *buf, size_t max_len);
+void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock);
 
 void msu_fdzcq_producer_run(msu_fdzcq_handle_t q);
 

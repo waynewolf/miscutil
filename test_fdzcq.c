@@ -816,13 +816,11 @@ static void test_fdzcq_mp_transfer_fd_cross_process()
         memcpy(data, "0123456789",10);
         munmap(data, 10);
 
-        uint8_t buf[1024];
-
         int try_count = 5;
         while (try_count--) {
             int client_sock = msu_fdzcq_producer_has_data(q);
             if (client_sock > 0) {
-                msu_fdzcq_producer_handle_data(q, client_sock, buf, 1024);
+                msu_fdzcq_producer_handle_data(q, client_sock);
                 break;
             }
             usleep(1000 * 1000);
