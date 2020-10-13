@@ -506,9 +506,9 @@ static void test_fdzcq_mp_shm_header()
 
         void *shm_addr = (void *)(*(uint64_t *)q);
 
-        uint8_t capacity = *((uint8_t *)shm_addr + 0);
-        uint8_t wr_off = *((uint8_t *)shm_addr + 1);
-        uint8_t rd_off = *((uint8_t *)shm_addr + 2);
+        uint8_t capacity = *((uint8_t *)shm_addr + sizeof(sem_t));
+        uint8_t wr_off = *((uint8_t *)shm_addr + 1 + sizeof(sem_t));
+        uint8_t rd_off = *((uint8_t *)shm_addr + 2 + sizeof(sem_t));
 
         g_assert_cmpint(capacity, ==, 4);
         g_assert_cmpint(wr_off, ==, 3);
@@ -519,9 +519,9 @@ static void test_fdzcq_mp_shm_header()
         msu_fdbuf_t *fdbuf = NULL;
         g_assert_cmpint(msu_fdzcq_consume(q, consumer, &fdbuf, NULL), ==, MSU_FDZCQ_STATUS_OK);
 
-        capacity = *((uint8_t *)shm_addr + 0);
-        wr_off = *((uint8_t *)shm_addr + 1);
-        rd_off = *((uint8_t *)shm_addr + 2);
+        capacity = *((uint8_t *)shm_addr + sizeof(sem_t));
+        wr_off = *((uint8_t *)shm_addr + 1 + sizeof(sem_t));
+        rd_off = *((uint8_t *)shm_addr + 2 + sizeof(sem_t));
 
         g_assert_cmpint(capacity, ==, 4);
         g_assert_cmpint(wr_off, ==, 3);

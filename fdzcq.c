@@ -20,6 +20,7 @@
 #pragma pack(push)
 #pragma pack(1)
 typedef struct msu_fdzcq_shm_head_s {
+    sem_t           q_sem;                                          /* offset 0 in the mmap paged aligned memory */
     uint8_t         capacity;                                       /* max nr of items in queue */
     uint8_t         wr_off;                                         /* producer write ptr */
     uint8_t         rd_off;                                         /* global read ptr */
@@ -27,8 +28,6 @@ typedef struct msu_fdzcq_shm_head_s {
 
     int             consumer[MSU_FDZCQ_MAX_CONSUMER];               /* consumer flag, -1 means "not exist" */
     int             consumer_id_seq_no;
-
-    sem_t           q_sem;                                          /* the semaphore to protect whole q in shm */
 } msu_fdzcq_shm_head_t;
 #pragma pack(pop)
 
