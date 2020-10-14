@@ -119,8 +119,19 @@ msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data);
  */
 int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q);
 
+/**
+ * producer handle data communication with consumer
+ *
+ * @param q the handle of fdzcq
+ * @param client_sock the data socket to communicate with client
+ */
 void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock);
 
+/**
+ * producer main loop, doesn't return
+ *
+ * @param q the handle of fdzcq
+ */
 void msu_fdzcq_producer_run(msu_fdzcq_handle_t q);
 
 /**
