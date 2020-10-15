@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #define MSU_FDZCQ_MAX_CONSUMER          4
+#define MSU_FDZCQ_MAX_DATA              8
 
 #ifdef __cplusplus
 extern "C"{
@@ -32,8 +33,9 @@ typedef struct msu_fdzcq_s *msu_fdzcq_handle_t;
 
 typedef struct msu_fdbuf_s {
     int                 fd;
-    int                 ref_count;          /* zero means slot empty */
-    void               *producer_data;      /* opaque data pointer ONLY used by producer */
+    int                 data[MSU_FDZCQ_MAX_DATA];           /* user defined data */
+    int                 ref_count;                          /* zero means slot empty */
+    void               *ext_data;                           /* opaque data pointer ONLY used by producer */
 } msu_fdbuf_t;
 
 /* the callback function is called within the semaphore protection */
@@ -106,10 +108,11 @@ msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd);
  *
  * @param q the handle of fdzcq
  * @param fd the buf based on fd
- * @param data opaque data pointer attached to fdbuf
+ * @param data opaque data attached to fdbuf
+ * @param ext_data opaque data pointer attached to fdbuf
  * @return status
  */
-msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data);
+msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, int data[MSU_FDZCQ_MAX_DATA], void *ext_data);
 
 /**
  * producer check whether data has arrived from consumer

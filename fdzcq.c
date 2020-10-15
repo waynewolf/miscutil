@@ -373,10 +373,11 @@ msu_fdzcq_status_t msu_fdzcq_produce(msu_fdzcq_handle_t q, int fd)
     assert(q != NULL);
     assert(fd > 0);
 
-    return msu_fdzcq_produce2(q, fd, NULL);
+    int data_nouse[MSU_FDZCQ_MAX_DATA];
+    return msu_fdzcq_produce2(q, fd, data_nouse, NULL);
 }
 
-msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data)
+msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, int data[MSU_FDZCQ_MAX_DATA], void *ext_data)
 {
     assert(q != NULL);
     assert(fd > 0);
@@ -388,7 +389,8 @@ msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, void *data)
 
     bufs[head->wr_off].fd = fd;
     bufs[head->wr_off].ref_count = 0;
-    bufs[head->wr_off].producer_data = data;
+    bufs[head->wr_off].ext_data = ext_data;
+    memcpy(bufs[head->wr_off].data, data, MSU_FDZCQ_MAX_DATA * sizeof(int));
 
     if (MSU_FDZCQ_IS_GLOBAL_FULL(head)) {
         sem_post(&head->q_sem);
