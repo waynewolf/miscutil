@@ -467,6 +467,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
         for (int i = 0; i <= max_sock; i++) {
             if (FD_ISSET(i, &read_set)) {
                 if (i == q->sock) {
+                    //printf("Producer: listen sock %d has incoming connection\n", q->sock);
                     int client_sock = accept(q->sock, NULL, NULL);
                     if (client_sock < 0) {
                         if (errno != EWOULDBLOCK) {
@@ -475,6 +476,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                         return 0;
                     }
 
+                    printf("Producer: client sock %d connected\n", client_sock);
                     FD_SET(client_sock, &read_set);
                     max_sock = client_sock > max_sock ? client_sock : max_sock;
 
@@ -482,7 +484,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                     if (q->num_client_socks == 0) {
                         q->client_socks = calloc(1, sizeof(int));
                         if (!q->client_socks) {
-                            fprintf(stderr, "Failed to allocate client socks array\n");
+                            printf("Failed to allocate client socks array\n");
                             return 0;
                         }
                         q->client_socks[0] = client_sock;
@@ -501,7 +503,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                         if (empty_sock_slot == q->num_client_socks) {
                             q->client_socks = realloc(q->client_socks, new_size * sizeof(int));
                             if (!q->client_socks) {
-                                fprintf(stderr, "Enlarge client socks array failed\n");
+                                printf("Enlarge client socks array failed\n");
                                 return 0;
                             }
                             memset(&q->client_socks[old_size], 0, (new_size - old_size) * sizeof(int));
@@ -513,6 +515,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                 } else {
                     /* client socket, leave it to be processed by msu_fdzcq_producer_handle_data() */
                     FD_CLR(i, &read_set);
+                    printf("Producer: got data from client sock: %d\n", i);
                     return i;
                 }
             }
@@ -544,7 +547,7 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock)
             }
         }
     } else if (ssize != sizeof(offset)) {
-        fprintf(stderr, "Producer: invalid packet from consumer\n");
+        printf("Producer: invalid packet from consumer\n");
         return;
     }
 
@@ -555,7 +558,7 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock)
     if (ssize == 1) {
         //printf("Producer: send fd: %d succeeded", fd\n);
     } else {
-        fprintf(stderr, "Producer: send fd: %d failed\n", fd);
+        printf("Producer: send fd: %d failed\n", fd);
     }
 
 }
