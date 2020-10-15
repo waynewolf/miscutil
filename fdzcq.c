@@ -40,6 +40,8 @@ typedef struct msu_fdzcq_s {
     int                         consumer[MSU_FDZCQ_MAX_CONSUMER];   /* consumers for this q instance */
     int                         is_producer;                        /* producer or consumer */
     int                         sock;                               /* producer: listen sock, consumer: data sock */
+    int                        *client_socks;                       /* producer use ONLY, connected clients */
+    int                         num_client_socks;                   /* producer use ONLY, the number connected clients */
     int                         quit_server;                        /* flag to quit producer socket server */
     void                       *user_data;                          /* opaque data, no touch, just pass around */
 } *msu_fdzcq_handle_t;
@@ -92,6 +94,9 @@ msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t f
 
     q->is_producer = 1;
     q->quit_server = 0;
+
+    q->client_socks = NULL;
+    q->num_client_socks = 0;
 
     q->sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (q->sock == -1) {
@@ -201,6 +206,16 @@ void msu_fdzcq_destroy(msu_fdzcq_handle_t q)
     sem_destroy(&head->q_sem);
     munmap(q->shm_data, q->map_len);
     close(q->shm_fd);
+
+    for (int i = 0; i < q->num_client_socks; i++) {
+        if (q->client_socks[i] > 0) {
+            close(q->client_socks[i]);
+        }
+    }
+    if (q->client_socks) {
+        free(q->client_socks);
+    }
+
     close(q->sock);
     unlink(PRODUCER_SERVER_SOCK);
 
@@ -462,6 +477,39 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
 
                     FD_SET(client_sock, &read_set);
                     max_sock = client_sock > max_sock ? client_sock : max_sock;
+
+                    /* the first connection, should do some initialization */
+                    if (q->num_client_socks == 0) {
+                        q->client_socks = calloc(1, sizeof(int));
+                        if (!q->client_socks) {
+                            fprintf(stderr, "Failed to allocate client socks array\n");
+                            return 0;
+                        }
+                        q->client_socks[0] = client_sock;
+                        q->num_client_socks = 1;
+                    } else {
+                        /* find an empty slot to save client sock, enlarge array if no space left */
+                        int empty_sock_slot = 0;
+                        for (; empty_sock_slot < q->num_client_socks; empty_sock_slot++) {
+                            if (q->client_socks[i] == 0) {
+                                break;
+                            }
+                        }
+
+                        int old_size = q->num_client_socks;
+                        int new_size = q->num_client_socks * 2;
+                        if (empty_sock_slot == q->num_client_socks) {
+                            q->client_socks = realloc(q->client_socks, new_size * sizeof(int));
+                            if (!q->client_socks) {
+                                fprintf(stderr, "Enlarge client socks array failed\n");
+                                return 0;
+                            }
+                            memset(&q->client_socks[old_size], 0, (new_size - old_size) * sizeof(int));
+                        }
+
+                        q->client_socks[empty_sock_slot] = client_sock;
+                        q->num_client_socks = old_size + 1;
+                    }
                 } else {
                     /* client socket, leave it to be processed by msu_fdzcq_producer_handle_data() */
                     FD_CLR(i, &read_set);
@@ -486,15 +534,30 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock)
     uint8_t offset = 0;
     ssize_t ssize = consumer_block_sock_readn(client_sock, &offset, sizeof(offset));
 
-    if (ssize != sizeof(offset)) {
-        printf("Invalid packet from consumer\n");
+    if (ssize == 0) {
+        printf("Producer: client sock %d disconnected\n", client_sock);
+
+        for (int i = 0; i < q->num_client_socks; ++i) {
+            if (q->client_socks[i] == client_sock) {
+                close(q->client_socks[i]);
+                q->client_socks[i] = 0;
+            }
+        }
+    } else if (ssize != sizeof(offset)) {
+        fprintf(stderr, "Producer: invalid packet from consumer\n");
         return;
     }
 
     /* do not lock here, consumer already hold the semaphore */
     int fd = bufs[offset].fd;
-    uint8_t nouse = 0;
+    uint8_t nouse = 'A';
     sock_fd_write(client_sock, &nouse, 1, fd);
+    if (ssize == 1) {
+        //printf("Producer: send fd: %d succeeded", fd\n);
+    } else {
+        fprintf(stderr, "Producer: send fd: %d failed\n", fd);
+    }
+
 }
 
 void msu_fdzcq_producer_run(msu_fdzcq_handle_t q)
