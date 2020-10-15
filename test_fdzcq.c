@@ -868,7 +868,7 @@ static void test_fdzcq_mp_transfer_fd_cross_process()
 
         msu_fdbuf_unref(q, fdbuf);
 
-        msu_fdzcq_destroy(q);
+        msu_fdzcq_release(q);
 
         exit(0);
     }
