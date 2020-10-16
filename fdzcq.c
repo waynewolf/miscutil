@@ -42,6 +42,7 @@ typedef struct msu_fdzcq_s {
     int                         sock;                               /* producer: listen sock, consumer: data sock */
     int                        *client_socks;                       /* producer use ONLY, connected clients */
     int                         num_client_socks;                   /* producer use ONLY, the number connected clients */
+    fd_set                      read_fd_set;                        /* producer use ONLY, save the select read fd set */
     int                         quit_server;                        /* flag to quit producer socket server */
     void                       *user_data;                          /* opaque data, no touch, just pass around */
 } *msu_fdzcq_handle_t;
@@ -145,6 +146,8 @@ msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t f
         free(q);
         return NULL;
     }
+
+    FD_ZERO(&q->read_fd_set);
 
     errno = 0;
     q->shm_fd = shm_open("fdzcq", O_CREAT | O_RDWR, 0666);
@@ -442,16 +445,20 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
     assert(q != NULL);
 
     struct timeval timeout;
-    fd_set read_set;
 
-    FD_ZERO(&read_set);
-    FD_SET(q->sock, &read_set);
+    FD_SET(q->sock, &q->read_fd_set);
 
     timeout.tv_sec  = 0;
     timeout.tv_usec = 10 * 1000;
 
     int max_sock = q->sock;
-    int retval = select(max_sock + 1, &read_set, NULL, NULL, &timeout);
+    for (int i = 0; i < q->num_client_socks; i++) {
+        if (max_sock < q->client_socks[i]) {
+            max_sock = q->client_socks[i];
+        }
+    }
+
+    int retval = select(max_sock + 1, &q->read_fd_set, NULL, NULL, &timeout);
 
     while (1) {
         if (retval == -1) {
@@ -465,7 +472,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
         }
 
         for (int i = 0; i <= max_sock; i++) {
-            if (FD_ISSET(i, &read_set)) {
+            if (FD_ISSET(i, &q->read_fd_set)) {
                 if (i == q->sock) {
                     //printf("Producer: listen sock %d has incoming connection\n", q->sock);
                     int client_sock = accept(q->sock, NULL, NULL);
@@ -477,7 +484,7 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                     }
 
                     printf("Producer: client sock %d connected\n", client_sock);
-                    FD_SET(client_sock, &read_set);
+                    FD_SET(client_sock, &q->read_fd_set);
                     max_sock = client_sock > max_sock ? client_sock : max_sock;
 
                     /* the first connection, should do some initialization */
@@ -514,14 +521,13 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                     }
                 } else {
                     /* client socket, leave it to be processed by msu_fdzcq_producer_handle_data() */
-                    FD_CLR(i, &read_set);
                     printf("Producer: got data from client sock: %d\n", i);
                     return i;
                 }
             }
         }
 
-        retval = select(max_sock + 1, &read_set, NULL, NULL, &timeout);
+        retval = select(max_sock + 1, &q->read_fd_set, NULL, NULL, &timeout);
     }
 
     /* should not reach here */
@@ -540,9 +546,11 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock)
     if (ssize == 0) {
         printf("Producer: client sock %d disconnected\n", client_sock);
 
+        /* just mark the value to be 0 */
         for (int i = 0; i < q->num_client_socks; ++i) {
             if (q->client_socks[i] == client_sock) {
                 close(q->client_socks[i]);
+                FD_CLR(q->client_socks[i], &q->read_fd_set);
                 q->client_socks[i] = 0;
             }
         }
