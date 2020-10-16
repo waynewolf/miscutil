@@ -36,6 +36,7 @@ typedef struct msu_fdbuf_s {
     int                 fd;
     int                 data[MSU_FDZCQ_MAX_DATA];           /* user defined data */
     int                 ref_count;                          /* zero means slot empty */
+    int                 notify;                             /* notify producer to call release buf callback */
     void               *ext_data;                           /* opaque data pointer ONLY used by producer */
 } msu_fdbuf_t;
 

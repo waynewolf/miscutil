@@ -81,6 +81,7 @@ static ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd);
 static ssize_t sock_fd_write(int sock, void *buf, ssize_t buflen, int fd);
 static ssize_t consumer_block_sock_sendn(int sock, void *buf, ssize_t bufsize);
 static ssize_t consumer_block_sock_readn(int sock, void *buf, ssize_t bufsize);
+//static void update_all_rd_off(msu_fdzcq_handle_t q, msu_fdzcq_shm_head_t *head);
 
 
 msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb, void *user_data)
@@ -405,9 +406,24 @@ msu_fdzcq_status_t msu_fdzcq_produce2(msu_fdzcq_handle_t q, int fd, int data[MSU
 
     sem_wait(&head->q_sem);
 
-    bufs[head->wr_off].fd = fd;
-    bufs[head->wr_off].ref_count = 0;
-    bufs[head->wr_off].ext_data = ext_data;
+    /* house keeping first, release bufs marked by consumer unref */
+    for (int i = 0; i < head->capacity; i++) {
+        if (bufs[i].notify == 1) {
+            /*
+             * buffer already unref-ed by consumer, but buf release callback
+             * is not called on producer side yet, so we do it here.
+             */
+            if (q->fdbuf_free_cb) {
+                q->fdbuf_free_cb(q, &bufs[i]);
+            }
+            bufs[i].notify = 0;
+        }
+    }
+
+    bufs[head->wr_off].fd           = fd;
+    bufs[head->wr_off].ref_count    = 0;
+    bufs[head->wr_off].notify       = 0;
+    bufs[head->wr_off].ext_data     = ext_data;
     memcpy(bufs[head->wr_off].data, data, MSU_FDZCQ_MAX_DATA * sizeof(int));
 
     if (MSU_FDZCQ_IS_GLOBAL_FULL(head)) {
@@ -484,6 +500,16 @@ int msu_fdzcq_producer_has_data(msu_fdzcq_handle_t q)
                     }
 
                     printf("Producer: client sock %d connected\n", client_sock);
+                    struct timeval timeout;
+                    timeout.tv_sec = 0;
+                    timeout.tv_usec = 100 * 1000;
+                    if (setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+                        printf("setsockopt receive timeout failed: %s\n", strerror(errno));
+                    }
+                    if (setsockopt(client_sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+                        printf("setsockopt send timeout failed: %s\n", strerror(errno));
+                    }
+
                     FD_SET(client_sock, &q->read_fd_set);
                     max_sock = client_sock > max_sock ? client_sock : max_sock;
 
@@ -611,7 +637,7 @@ msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_
     }
 
     if (MSU_FDZCQ_IS_LOCAL_EMPTY(head, consumer_index)) {
-        printf("Consume empty queue for consumer_index: %d\n", consumer_index);
+        //printf("Consume empty queue for consumer_index: %d\n", consumer_index);
         sem_post(&head->q_sem);
         return MSU_FDZCQ_STATUS_NO_BUF;
     }
@@ -867,11 +893,13 @@ void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
         }
         fdb->ref_count--;
         if (fdb->ref_count == 0 || fdb->ref_count == -1) {
+            /* == -1, buffer has never been consumed, buf buf free callback should be called anyway */
             if (q->fdbuf_free_cb) {
                 q->fdbuf_free_cb(q, fdb);
             }
             if (fdb->ref_count == 0) {
-                fdb->ref_count--; /* make sure buf free function do not called twice */
+                /* mark the buffer, make sure buf free function do not called twice */
+                fdb->ref_count = -1;
             }
         } else {
             printf("Impossible refcount detected, shouldn't happen\n");
@@ -882,6 +910,9 @@ void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
             if (q->fdbuf_free_cb) {
                 q->fdbuf_free_cb(q, fdb);
             }
+            /* mark the buffer, the free buf callback of producer will be called later in produce */
+            //printf("mark %p notify, will be freed in produce later\n", fdb);
+            fdb->notify = 1;
         } else if (fdb->ref_count < 0) {
             printf("Consumer release buffer twice is not allowed\n");
         }
@@ -890,6 +921,21 @@ void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
     out:
     sem_post(&head->q_sem);
 }
+
+//static void update_all_rd_off(msu_fdzcq_handle_t q, msu_fdzcq_shm_head_t *head)
+//{
+//    ADVANCE_GLOBAL_RD_OFFSET(head);
+//
+//    int fast_consumer_count = 0;
+//    for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
+//        if (head->consumer[i] != -1) {
+//            if (msu_fdzcq_compare_read_speed2(q, i) < 0) {
+//                fast_consumer_count++;
+//                ADVANCE_LOCAL_RD_OFFSET(head, i);
+//            }
+//        }
+//    }
+//}
 
 void msu_fdbuf_dmabuf_lock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 {
@@ -1076,12 +1122,11 @@ static ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd)
         while (retry_count-- > 0) {
             size = recvmsg(sock, &msg, 0);
             if (size == -1 && (errno == EAGAIN)) {
-                fprintf(stderr, "retry_count: %d, sleep 1ms\n", retry_count);
-                usleep(1000);
+                //printf("retry_count: %d\n", retry_count);
                 continue;
             }
             if (size < 0) {
-                fprintf(stderr, "recvmsg failed: %s\n", strerror(errno));
+                printf("recvmsg failed: %s\n", strerror(errno));
                 return -1;
             }
             break;
