@@ -75,7 +75,7 @@ static int msu_fdzcq_local_buf_full(msu_fdzcq_handle_t q, int consumer_id);
 static int msu_fdzcq_compare_read_speed(msu_fdzcq_handle_t q, int consumer_id);
 static uint8_t msu_fdzcq_slowest_rd_off(msu_fdzcq_handle_t q);
 static int connect_with_timeout(int sock, struct sockaddr_un *addr, struct timeval *timeout);
-static int get_fd_from_producer_locked(msu_fdzcq_handle_t q, uint8_t offset);
+static int get_fd_from_producer(msu_fdzcq_handle_t q, uint8_t offset);
 static ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd);
 static ssize_t sock_fd_write(int sock, void *buf, ssize_t buflen, int fd);
 static ssize_t consumer_block_sock_sendn(int sock, void *buf, ssize_t bufsize);
@@ -610,7 +610,13 @@ msu_fdzcq_status_t msu_fdzcq_consume(msu_fdzcq_handle_t q, int consumer_id, msu_
 
     uint8_t rd_off_local = head->rd_off_local[consumer_index];
     if (fd != NULL) {
-        *fd = get_fd_from_producer_locked(q, rd_off_local);
+        sem_post(&head->q_sem);
+        int tmpfd = get_fd_from_producer(q, rd_off_local);
+        if (tmpfd == -1) {
+            return MSU_FDZCQ_STATUS_RETRY;
+        }
+        *fd = tmpfd;
+        sem_wait(&head->q_sem);
     }
 
     bufs[rd_off_local].ref_count++;
@@ -960,7 +966,7 @@ static int connect_with_timeout(int sock, struct sockaddr_un *addr, struct timev
     return 0;
 }
 
-static int get_fd_from_producer_locked(msu_fdzcq_handle_t q, uint8_t offset)
+static int get_fd_from_producer(msu_fdzcq_handle_t q, uint8_t offset)
 {
     consumer_block_sock_sendn(q->sock, &offset, 1);
 
@@ -1058,10 +1064,19 @@ static ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd)
         msg.msg_control     = cmsgu.control;
         msg.msg_controllen  = sizeof(cmsgu.control);
 
-        size = recvmsg(sock, &msg, 0);
-        if (size < 0) {
-            printf("recvmsg failed: %s\n", strerror(errno));
-            return -1;
+        int retry_count = 10;
+        while (retry_count-- > 0) {
+            size = recvmsg(sock, &msg, 0);
+            if (size == -1 && (errno == EAGAIN)) {
+                fprintf(stderr, "retry_count: %d, sleep 1ms\n", retry_count);
+                usleep(1000);
+                continue;
+            }
+            if (size < 0) {
+                fprintf(stderr, "recvmsg failed: %s\n", strerror(errno));
+                return -1;
+            }
+            break;
         }
 
         cmsg = CMSG_FIRSTHDR(&msg);

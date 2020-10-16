@@ -27,6 +27,7 @@ typedef enum msu_fdzcq_status_e {
     MSU_FDZCQ_STATUS_CONSUMER_NOT_FOUND,
     MSU_FDZCQ_STATUS_NO_BUF,
     MSU_FDZCQ_STATUS_MEMORY_ERR,
+    MSU_FDZCQ_STATUS_RETRY,
 } msu_fdzcq_status_t;
 
 typedef struct msu_fdzcq_s *msu_fdzcq_handle_t;
