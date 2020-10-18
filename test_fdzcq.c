@@ -961,6 +961,57 @@ static void test_fdzcq_mp_producer_calls_release_buf_callback_if_buf_unrefed_by_
     }
 }
 
+static void test_fdzcq_mp_socket_not_block_if_consumer_release()
+{
+    pid_t pid = fork();
+
+    if (pid > 0) {
+        msu_fdzcq_handle_t q = msu_fdzcq_create(3, NULL, NULL);
+
+        int fd = memfd_create("test_fdzcq_memfd", MFD_ALLOW_SEALING);
+
+        int num_producer_release = 0;
+        int data_nouse[MSU_FDZCQ_MAX_DATA];
+
+        g_assert_cmpint(msu_fdzcq_produce2(q, fd, data_nouse, &num_producer_release), ==, MSU_FDZCQ_STATUS_OK);
+
+        int try_count = 5;
+        while (try_count--) {
+            int client_sock = msu_fdzcq_producer_has_data(q);
+            if (client_sock > 0) {
+                msu_fdzcq_producer_handle_data(q, client_sock);
+            }
+            usleep(500 * 1000);
+        }
+
+        int ret = waitpid(pid, NULL, 0);
+        g_assert(ret > 0);
+
+        close(fd);
+        msu_fdzcq_destroy(q);
+    } else if (pid == 0) {
+        /* child process wait for parent process to create fdzcq */
+        sleep(1);
+
+        int num_consumer_release = 0;
+
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(consumer_side_release_buf_callback, &num_consumer_release);
+
+        int consumer_id = msu_fdzcq_register_consumer(q);
+
+        int fd;
+        msu_fdbuf_t *fdbuf = NULL;
+
+        g_assert_cmpint(msu_fdzcq_consume(q, consumer_id, &fdbuf, &fd), ==, MSU_FDZCQ_STATUS_OK);
+        msu_fdbuf_unref(q, fdbuf);
+        close(fd);
+
+        msu_fdzcq_release(q);
+
+        exit(0);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     g_test_init(&argc, &argv, NULL);
@@ -1015,6 +1066,9 @@ int main(int argc, char *argv[])
 
     g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_producer_calls_release_buf_callback_if_buf_unrefed_by_consumer",
                     test_fdzcq_mp_producer_calls_release_buf_callback_if_buf_unrefed_by_consumer);
+
+    g_test_add_func("/miscutil/fdzcq/test_fdzcq_mp_socket_not_block_if_consumer_release",
+                    test_fdzcq_mp_socket_not_block_if_consumer_release);
 
     return g_test_run();
 }

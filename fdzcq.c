@@ -81,7 +81,6 @@ static ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd);
 static ssize_t sock_fd_write(int sock, void *buf, ssize_t buflen, int fd);
 static ssize_t consumer_block_sock_sendn(int sock, void *buf, ssize_t bufsize);
 static ssize_t consumer_block_sock_readn(int sock, void *buf, ssize_t bufsize);
-//static void update_all_rd_off(msu_fdzcq_handle_t q, msu_fdzcq_shm_head_t *head);
 
 
 msu_fdzcq_handle_t msu_fdzcq_create(uint8_t capacity, msu_fdbuf_release_func_t free_cb, void *user_data)
@@ -578,6 +577,7 @@ void msu_fdzcq_producer_handle_data(msu_fdzcq_handle_t q, int client_sock)
                 close(q->client_socks[i]);
                 FD_CLR(q->client_socks[i], &q->read_fd_set);
                 q->client_socks[i] = 0;
+                return;
             }
         }
     } else if (ssize != sizeof(offset)) {
@@ -922,21 +922,6 @@ void msu_fdbuf_unref(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
     sem_post(&head->q_sem);
 }
 
-//static void update_all_rd_off(msu_fdzcq_handle_t q, msu_fdzcq_shm_head_t *head)
-//{
-//    ADVANCE_GLOBAL_RD_OFFSET(head);
-//
-//    int fast_consumer_count = 0;
-//    for (int i = 0; i < MSU_FDZCQ_MAX_CONSUMER; i++) {
-//        if (head->consumer[i] != -1) {
-//            if (msu_fdzcq_compare_read_speed2(q, i) < 0) {
-//                fast_consumer_count++;
-//                ADVANCE_LOCAL_RD_OFFSET(head, i);
-//            }
-//        }
-//    }
-//}
-
 void msu_fdbuf_dmabuf_lock(msu_fdzcq_handle_t q, msu_fdbuf_t *fdb)
 {
     assert(q != NULL);
@@ -1087,6 +1072,8 @@ static ssize_t consumer_block_sock_readn(int sock, void *buf, ssize_t bufsize)
                 break;
             }
             return -1;
+        } else if (n == 0) {
+            break;
         } else {
             nread += n;
         }
