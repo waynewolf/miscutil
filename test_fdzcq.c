@@ -970,10 +970,7 @@ static void test_fdzcq_mp_socket_not_block_if_consumer_release()
 
         int fd = memfd_create("test_fdzcq_memfd", MFD_ALLOW_SEALING);
 
-        int num_producer_release = 0;
-        int data_nouse[MSU_FDZCQ_MAX_DATA];
-
-        g_assert_cmpint(msu_fdzcq_produce2(q, fd, data_nouse, &num_producer_release), ==, MSU_FDZCQ_STATUS_OK);
+        g_assert_cmpint(msu_fdzcq_produce(q, fd), ==, MSU_FDZCQ_STATUS_OK);
 
         int try_count = 5;
         while (try_count--) {
@@ -993,9 +990,7 @@ static void test_fdzcq_mp_socket_not_block_if_consumer_release()
         /* child process wait for parent process to create fdzcq */
         sleep(1);
 
-        int num_consumer_release = 0;
-
-        msu_fdzcq_handle_t q = msu_fdzcq_acquire(consumer_side_release_buf_callback, &num_consumer_release);
+        msu_fdzcq_handle_t q = msu_fdzcq_acquire(NULL, NULL);
 
         int consumer_id = msu_fdzcq_register_consumer(q);
 
